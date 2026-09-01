@@ -39,14 +39,16 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      # macOS Abhängigkeiten
+      # macOS Abhängigkeiten + Clang/Bindgen Pfade für FFmpeg setzen
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           brew update
           brew install ffmpeg pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(brew --prefix)/include" >> $GITHUB_ENV
 
-      # Linux Abhängigkeiten
+      # Linux Abhängigkeiten (inklusive clang/llvm für bindgen)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -58,6 +60,9 @@ jobs:
             librsvg2-dev \
             patchelf \
             pkg-config \
+            clang \
+            llvm-dev \
+            libclang-dev \
             ffmpeg \
             libavcodec-dev \
             libavformat-dev \
@@ -67,7 +72,7 @@ jobs:
             libavfilter-dev \
             libavdevice-dev
 
-      # Windows Abhängigkeiten (Stabilisierte Installation via vcpkg / choco)
+      # Windows Abhängigkeiten
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
@@ -97,3 +102,4 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           retention-days: 7
+          
