@@ -30,7 +30,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Erkennt automatisch pnpm 10.5.2 aus deiner package.json
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
@@ -55,7 +54,8 @@ jobs:
         run: pnpm install
 
       - name: Build Tauri Application
-        run: pnpm tauri build
+        working-directory: apps/desktop
+        run: pnpm exec tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: '' # Deaktiviert die Pflicht zur Code-Signierung
 
