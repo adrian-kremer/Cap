@@ -39,16 +39,21 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      # macOS Abhängigkeiten + Clang/Bindgen Pfade für FFmpeg setzen
+      # macOS: FFmpeg + Clang macOS SDK-Sysroot & Header-Pfade setzen
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           brew update
           brew install ffmpeg pkg-config
-          echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
-          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(brew --prefix)/include" >> $GITHUB_ENV
+          
+          SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
+          FFMPEG_PREFIX=$(brew --prefix ffmpeg)
+          
+          echo "FFMPEG_DIR=$FFMPEG_PREFIX" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-isysroot $SDK_PATH -I$FFMPEG_PREFIX/include -I/opt/homebrew/include" >> $GITHUB_ENV
 
-      # Linux Abhängigkeiten (inklusive clang/llvm für bindgen)
+      # Linux: WebKit, GTK, Clang und FFmpeg-Entwickler-Header
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -72,11 +77,20 @@ jobs:
             libavfilter-dev \
             libavdevice-dev
 
-      # Windows Abhängigkeiten
+      # Windows: FFmpeg Shared Shared/Dev Build herunterladen & Pfade setzen
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
+        shell: powershell
         run: |
-          choco install ffmpeg pkgconfiglite -y
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile "ffmpeg.zip"
+          Expand-Archive ffmpeg.zip -DestinationPath "C:\ffmpeg"
+          $ffmpegDir = Get-ChildItem -Path "C:\ffmpeg" -Directory | Select-Object -ExpandProperty FullName
+          
+          echo "FFMPEG_DIR=$ffmpegDir" >> $env:GITHUB_ENV
+          echo "$ffmpegDir\bin" >> $env:GITHUB_PATH
+          echo "LIB=$ffmpegDir\lib" >> $env:GITHUB_ENV
+          echo "INCLUDE=$ffmpegDir\include" >> $env:GITHUB_ENV
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
