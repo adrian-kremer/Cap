@@ -101,16 +101,18 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
-      # NEU: Compiliert cap-muxer und platziert die Datei im von Tauri erwarteten Pfad
-      - name: Build Sidecar Binary (cap-muxer)
+      # Compiliert alle Sidecar Binaries (cap-muxer und cap-exporter)
+      - name: Build Sidecar Binaries (cap-muxer & cap-exporter)
         shell: bash
         run: |
-          cargo build --release --bin cap-muxer --target ${{ matrix.target }}
+          cargo build --release --bin cap-muxer --bin cap-exporter --target ${{ matrix.target }}
           mkdir -p apps/desktop/src-tauri/binaries
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp target/${{ matrix.target }}/release/cap-muxer.exe apps/desktop/src-tauri/binaries/cap-muxer-${{ matrix.target }}.exe
+            cp target/${{ matrix.target }}/release/cap-exporter.exe apps/desktop/src-tauri/binaries/cap-exporter-${{ matrix.target }}.exe
           else
             cp target/${{ matrix.target }}/release/cap-muxer apps/desktop/src-tauri/binaries/cap-muxer-${{ matrix.target }}
+            cp target/${{ matrix.target }}/release/cap-exporter apps/desktop/src-tauri/binaries/cap-exporter-${{ matrix.target }}
           fi
 
       - name: Build Tauri Application
