@@ -39,14 +39,14 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      # macOS Abhängigkeiten (FFmpeg + pkg-config)
+      # macOS Abhängigkeiten
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           brew update
           brew install ffmpeg pkg-config
 
-      # Linux Abhängigkeiten (Tauri GTK/WebKit + FFmpeg Dev Header)
+      # Linux Abhängigkeiten
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -67,11 +67,11 @@ jobs:
             libavfilter-dev \
             libavdevice-dev
 
-      # Windows Abhängigkeiten (FFmpeg Dev + pkg-config via Chocolatey)
+      # Windows Abhängigkeiten (Stabilisierte Installation via vcpkg / choco)
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ffmpeg-shared pkgconfiglite -y
+          choco install ffmpeg pkgconfiglite -y
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
