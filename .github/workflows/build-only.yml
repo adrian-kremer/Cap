@@ -112,6 +112,23 @@ jobs:
           maximum-size: 24GB
           disk-root: "D:"
 
+      # Deaktiviert den Auto-Updater, damit Tauri keine Signaturschlüssel erzwingt
+      - name: Disable Tauri Updater (no signing needed)
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const file = "apps/desktop/src-tauri/tauri.prod.conf.json";
+            if (fs.existsSync(file)) {
+              const conf = JSON.parse(fs.readFileSync(file, "utf8"));
+              if (conf.tauri && conf.tauri.updater) conf.tauri.updater.active = false;
+              if (conf.bundle && conf.bundle.updater) conf.bundle.updater.active = false;
+              if (conf.plugins && conf.plugins.updater) conf.plugins.updater.active = false;
+              fs.writeFileSync(file, JSON.stringify(conf, null, 2));
+              console.log("Disabled updater in " + file);
+            }
+          '
+
       # Baut die fertige Desktop App
       - name: Build app
         working-directory: apps/desktop
@@ -119,7 +136,6 @@ jobs:
         env:
           CI: false
           LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && format('{0}/target/{1}/release:{0}/target/native-deps/lib', github.workspace, matrix.settings.target) || '' }}
-          TAURI_SIGNING_PRIVATE_KEY: ''
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
 
       # Speichert alle erzeugten Installer als Direkt-Download in GitHub Actions
