@@ -74,7 +74,7 @@ jobs:
           maximum-size: 24GB
           disk-root: "D:"
 
-      # Drosselt Cargo-Jobs NUR auf Windows, um OOMs zu vermeiden (ohne leere Strings auf Mac/Linux zu erzeugen)
+      # Drosselt Cargo-Jobs NUR auf Windows, um OOMs zu vermeiden
       - name: Limit Cargo Jobs for Windows
         if: ${{ runner.os == 'Windows' }}
         shell: bash
@@ -122,14 +122,14 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. TAURI UPDATER ENFERNEN UND LINUX SIGNING BYPASSEN ---
-      - name: Strip Tauri Updater and bypass Linux signing check
+      # --- 4. TAURI UPDATER PUBKEY ENTFERNEN UND LINUX SIGNING BYPASSEN ---
+      - name: Patch Tauri Updater and bypass Linux signing check
         shell: bash
         run: |
           node -e '
             const fs = require("fs");
             
-            // 1. Lösche updater-Block und pubkey aus allen Tauri-Configs
+            // 1. Entferne pubkey und leere endpoints, aber behalte die updater-Struktur
             const confFiles = [
               "apps/desktop/src-tauri/tauri.prod.conf.json",
               "apps/desktop/src-tauri/tauri.conf.json"
@@ -138,11 +138,22 @@ jobs:
             confFiles.forEach(file => {
               if (fs.existsSync(file)) {
                 const conf = JSON.parse(fs.readFileSync(file, "utf8"));
-                if (conf.tauri) delete conf.tauri.updater;
-                if (conf.plugins) delete conf.plugins.updater;
-                if (conf.bundle) delete conf.bundle.updater;
+                
+                if (conf.plugins && conf.plugins.updater) {
+                  delete conf.plugins.updater.pubkey;
+                  conf.plugins.updater.endpoints = [];
+                }
+                if (conf.tauri && conf.tauri.updater) {
+                  delete conf.tauri.updater.pubkey;
+                  conf.tauri.updater.active = false;
+                }
+                if (conf.bundle && conf.bundle.updater) {
+                  delete conf.bundle.updater.pubkey;
+                  conf.bundle.updater.active = false;
+                }
+
                 fs.writeFileSync(file, JSON.stringify(conf, null, 2));
-                console.log("Stripped updater config from " + file);
+                console.log("Patched updater config in " + file);
               }
             });
 
