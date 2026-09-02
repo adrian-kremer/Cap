@@ -12,6 +12,9 @@ jobs:
   build:
     name: Build (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.runner }}
+    env:
+      # Verhindert Stack-Overflows (0xc0000005) beim Kompilieren von cap-gpui
+      RUST_MIN_STACK: 104857600
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +52,29 @@ jobs:
             console.log("Stamped " + path + " with " + version);
           '
 
+      # --- 1. SPEICHER ERHÖHEN ---
+      - name: Increase swap space (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          sudo swapoff /mnt/swapfile 2>/dev/null || true
+          sudo rm -f /mnt/swapfile
+          sudo fallocate -l 16G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          swapon --show
+          free -h
+
+      - name: Increase pagefile size (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        uses: al-cheb/configure-pagefile-action@v1.4
+        with:
+          minimum-size: 16GB
+          maximum-size: 24GB
+          disk-root: "D:"
+
+      # --- 2. TOOLCHAINS & ENVIRONMENT SETUP ---
       - name: Install Linux desktop dependencies
         if: ${{ runner.os == 'Linux' }}
         uses: ./.github/actions/install-desktop-deps
@@ -75,61 +101,60 @@ jobs:
             echo "RUST_TARGET_TRIPLE=${{ matrix.settings.target }}"
           } >> .env
 
+      # --- 3. SIDECARS & BINARIES BAUEN ---
       - name: Run cap-setup
         shell: bash
         run: pnpm -w cap-setup
         env:
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
 
-      # Baut alle Sidecars (cap-muxer, cap-exporter, cap-cli, cap-gpui)
       - name: Build desktop binaries
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             export CARGO_PROFILE_RELEASE_DEBUG=0
           fi
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            export CARGO_BUILD_JOBS=2
+          fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # Erhöht Swap/Pagefile um OOM-Crashes beim Fat-LTO Linking zu verhindern
-      - name: Increase swap space (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        shell: bash
-        run: |
-          sudo swapoff /mnt/swapfile 2>/dev/null || true
-          sudo rm -f /mnt/swapfile
-          sudo fallocate -l 16G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          swapon --show
-          free -h
-
-      - name: Increase pagefile size (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        uses: al-cheb/configure-pagefile-action@v1.4
-        with:
-          minimum-size: 16GB
-          maximum-size: 24GB
-          disk-root: "D:"
-
-      # Deaktiviert den Auto-Updater, damit Tauri keine Signaturschlüssel erzwingt
-      - name: Disable Tauri Updater (no signing needed)
+      # --- 4. TAURI UPDATER ENTFARBEN UND LINUX SIGNING BYPASSEN ---
+      - name: Strip Tauri Updater and bypass Linux signing check
         shell: bash
         run: |
           node -e '
             const fs = require("fs");
-            const file = "apps/desktop/src-tauri/tauri.prod.conf.json";
-            if (fs.existsSync(file)) {
-              const conf = JSON.parse(fs.readFileSync(file, "utf8"));
-              if (conf.tauri && conf.tauri.updater) conf.tauri.updater.active = false;
-              if (conf.bundle && conf.bundle.updater) conf.bundle.updater.active = false;
-              if (conf.plugins && conf.plugins.updater) conf.plugins.updater.active = false;
-              fs.writeFileSync(file, JSON.stringify(conf, null, 2));
-              console.log("Disabled updater in " + file);
+            
+            // 1. Lösche updater-Block und pubkey aus allen Tauri-Configs
+            const confFiles = [
+              "apps/desktop/src-tauri/tauri.prod.conf.json",
+              "apps/desktop/src-tauri/tauri.conf.json"
+            ];
+            
+            confFiles.forEach(file => {
+              if (fs.existsSync(file)) {
+                const conf = JSON.parse(fs.readFileSync(file, "utf8"));
+                if (conf.tauri) delete conf.tauri.updater;
+                if (conf.plugins) delete conf.plugins.updater;
+                if (conf.bundle) delete conf.bundle.updater;
+                fs.writeFileSync(file, JSON.stringify(conf, null, 2));
+                console.log("Stripped updater config from " + file);
+              }
+            });
+
+            // 2. Entferne den Zwang für TAURI_SIGNING_PRIVATE_KEY im Linux Skript
+            const scriptFile = "scripts/build-linux-packages.mjs";
+            if (fs.existsSync(scriptFile)) {
+              let script = fs.readFileSync(scriptFile, "utf8");
+              script = script.replace(/if\s*\(\!process\.env\.TAURI_SIGNING_PRIVATE_KEY[\s\S]*?\}/g, "// Bypassed signing check");
+              script = script.replace(/throw new Error\([^)]*TAURI_SIGNING_PRIVATE_KEY[^)]*\);?/g, "// Bypassed signing error");
+              fs.writeFileSync(scriptFile, script);
+              console.log("Patched " + scriptFile + " to bypass signing check.");
             }
           '
 
-      # Baut die fertige Desktop App
+      # --- 5. BUNDLE / APP COMPILATION ---
       - name: Build app
         working-directory: apps/desktop
         run: ${{ runner.os == 'Linux' && 'CARGO_PROFILE_RELEASE_DEBUG=0 node ../../scripts/build-linux-packages.mjs' || 'pnpm build:tauri --target' }} ${{ matrix.settings.target }} --config src-tauri/tauri.prod.conf.json ${{ runner.os == 'Windows' && '--bundles nsis' || runner.os == 'Linux' && '--verbose' || '' }}
@@ -137,8 +162,9 @@ jobs:
           CI: false
           LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && format('{0}/target/{1}/release:{0}/target/native-deps/lib', github.workspace, matrix.settings.target) || '' }}
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
+          CARGO_BUILD_JOBS: ${{ runner.os == 'Windows' && '2' || '' }}
 
-      # Speichert alle erzeugten Installer als Direkt-Download in GitHub Actions
+      # --- 6. ARTIFACT UPLOAD ---
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -150,4 +176,3 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/rpm/*.rpm
           retention-days: 7
-          
