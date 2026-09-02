@@ -52,7 +52,7 @@ jobs:
             console.log("Stamped " + path + " with " + version);
           '
 
-      # --- 1. SPEICHER ERHÖHEN ---
+      # --- 1. SPEICHER ERHÖHEN & WINDOWS DROSSELUNG ---
       - name: Increase swap space (Linux)
         if: ${{ runner.os == 'Linux' }}
         shell: bash
@@ -73,6 +73,12 @@ jobs:
           minimum-size: 16GB
           maximum-size: 24GB
           disk-root: "D:"
+
+      # Drosselt Cargo-Jobs NUR auf Windows, um OOMs zu vermeiden (ohne leere Strings auf Mac/Linux zu erzeugen)
+      - name: Limit Cargo Jobs for Windows
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: echo "CARGO_BUILD_JOBS=2" >> $GITHUB_ENV
 
       # --- 2. TOOLCHAINS & ENVIRONMENT SETUP ---
       - name: Install Linux desktop dependencies
@@ -114,12 +120,9 @@ jobs:
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             export CARGO_PROFILE_RELEASE_DEBUG=0
           fi
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            export CARGO_BUILD_JOBS=2
-          fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. TAURI UPDATER ENTFARBEN UND LINUX SIGNING BYPASSEN ---
+      # --- 4. TAURI UPDATER ENFERNEN UND LINUX SIGNING BYPASSEN ---
       - name: Strip Tauri Updater and bypass Linux signing check
         shell: bash
         run: |
@@ -162,7 +165,6 @@ jobs:
           CI: false
           LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && format('{0}/target/{1}/release:{0}/target/native-deps/lib', github.workspace, matrix.settings.target) || '' }}
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
-          CARGO_BUILD_JOBS: ${{ runner.os == 'Windows' && '2' || '' }}
 
       # --- 6. ARTIFACT UPLOAD ---
       - name: Upload Build Artifacts
