@@ -122,14 +122,24 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. TAURI UPDATER PUBKEY ENTFERNEN UND LINUX SIGNING BYPASSEN ---
-      - name: Patch Tauri Updater and bypass Linux signing check
+      # --- 4. DUMMY TAURI SIGNING KEYS INJIZIEREN ---
+      - name: Inject Dummy Tauri Keys and bypass Linux signing check
         shell: bash
         run: |
+          # 1. Privaten Dummy-Schlüssel für Tauri Bundler in GITHUB_ENV setzen
+          cat << 'EOF' >> $GITHUB_ENV
+          TAURI_SIGNING_PRIVATE_KEY<<KEYEOF
+          untrusted comment: secret key logs
+          RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4=
+          KEYEOF
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          EOF
+
+          # 2. Passenden Dummy-Pubkey in Tauri-Configs schreiben
           node -e '
             const fs = require("fs");
+            const dummyPubkey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzZFNTM5MDFCNkYwNDYKUldSMVNBNTV1RDR1UGpPWTNtMnpMQmpNQ0dpVnpDU0lhSmsyTHBEWVNZUmdwTWRMcm16aUdCblAK";
             
-            // 1. Entferne pubkey und leere endpoints, aber behalte die updater-Struktur
             const confFiles = [
               "apps/desktop/src-tauri/tauri.prod.conf.json",
               "apps/desktop/src-tauri/tauri.conf.json"
@@ -140,24 +150,23 @@ jobs:
                 const conf = JSON.parse(fs.readFileSync(file, "utf8"));
                 
                 if (conf.plugins && conf.plugins.updater) {
-                  delete conf.plugins.updater.pubkey;
-                  conf.plugins.updater.endpoints = [];
+                  conf.plugins.updater.pubkey = dummyPubkey;
                 }
                 if (conf.tauri && conf.tauri.updater) {
-                  delete conf.tauri.updater.pubkey;
+                  conf.tauri.updater.pubkey = dummyPubkey;
                   conf.tauri.updater.active = false;
                 }
                 if (conf.bundle && conf.bundle.updater) {
-                  delete conf.bundle.updater.pubkey;
+                  conf.bundle.updater.pubkey = dummyPubkey;
                   conf.bundle.updater.active = false;
                 }
 
                 fs.writeFileSync(file, JSON.stringify(conf, null, 2));
-                console.log("Patched updater config in " + file);
+                console.log("Injected dummy pubkey into " + file);
               }
             });
 
-            // 2. Entferne den Zwang für TAURI_SIGNING_PRIVATE_KEY im Linux Skript
+            // 3. Entferne den Zwang für TAURI_SIGNING_PRIVATE_KEY im Linux Skript
             const scriptFile = "scripts/build-linux-packages.mjs";
             if (fs.existsSync(scriptFile)) {
               let script = fs.readFileSync(scriptFile, "utf8");
@@ -189,3 +198,4 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/rpm/*.rpm
           retention-days: 7
+          
