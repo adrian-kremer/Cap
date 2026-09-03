@@ -122,29 +122,22 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. SCHLÜSSEL DATEIBASIERT ERZEUGEN UND TAURI CONFIGS ANPASSEN ---
-      - name: Generate Key File and Patch Tauri Configs
+      # --- 4. DUMMY TAURI SIGNING KEYS INJIZIEREN (REINER BASE64-STRING) ---
+      - name: Patch Tauri Configs & Set Private Key
         shell: bash
         run: |
           node -e '
             const fs = require("fs");
-            const path = require("path");
 
-            // 1. Privaten Schlüssel als physische Datei schreiben
-            const keyContent = [
-              "untrusted comment: secret key logs",
-              "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
-            ].join("\n");
-
-            const keyPath = path.resolve("apps/desktop/src-tauri/minisign.key");
-            fs.writeFileSync(keyPath, keyContent);
-            console.log("Created key file at: " + keyPath);
+            // 1. Nur den reinen Base64-String ohne Minisign-Header setzen
+            const rawBase64Key = "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4=";
 
             if (process.env.GITHUB_ENV) {
               fs.appendFileSync(
                 process.env.GITHUB_ENV,
-                `TAURI_SIGNING_PRIVATE_KEY=${keyPath}\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=""\n`
+                `TAURI_SIGNING_PRIVATE_KEY=${rawBase64Key}\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=""\n`
               );
+              console.log("Injected raw base64 TAURI_SIGNING_PRIVATE_KEY into GITHUB_ENV");
             }
 
             // 2. Passenden Dummy-Pubkey in Tauri-Configs schreiben
@@ -196,7 +189,7 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: 0
           LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && format('{0}/target/{1}/release:{0}/target/native-deps/lib', github.workspace, matrix.settings.target) || '' }}
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ github.workspace }}/apps/desktop/src-tauri/minisign.key
+          TAURI_SIGNING_PRIVATE_KEY: "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
       # --- 6. ARTIFACT UPLOAD ---
