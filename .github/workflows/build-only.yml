@@ -122,29 +122,33 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. DUMMY TAURI SIGNING KEYS INJIZIEREN (OHNE LEERZEICHEN-FEHLER) ---
-      - name: Inject Dummy Tauri Keys and bypass Linux signing check
+      # --- 4. SCHLÜSSEL DATEIBASIERT ERZEUGEN UND TAURI CONFIGS ANPASSEN ---
+      - name: Generate Key File and Patch Tauri Configs
         shell: bash
         run: |
           node -e '
             const fs = require("fs");
+            const path = require("path");
 
-            // 1. Privaten Schlüssel ohne YAML-Leerzeichen sauber in GITHUB_ENV injizieren
-            const privateKey = [
+            // 1. Privaten Schlüssel als physische Datei schreiben
+            const keyContent = [
               "untrusted comment: secret key logs",
               "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
             ].join("\n");
 
+            const keyPath = path.resolve("apps/desktop/src-tauri/minisign.key");
+            fs.writeFileSync(keyPath, keyContent);
+            console.log("Created key file at: " + keyPath);
+
             if (process.env.GITHUB_ENV) {
               fs.appendFileSync(
                 process.env.GITHUB_ENV,
-                `TAURI_SIGNING_PRIVATE_KEY<<KEYEOF\n${privateKey}\nKEYEOF\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=""\n`
+                `TAURI_SIGNING_PRIVATE_KEY=${keyPath}\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=""\n`
               );
-              console.log("Injected clean TAURI_SIGNING_PRIVATE_KEY into GITHUB_ENV");
             }
 
             // 2. Passenden Dummy-Pubkey in Tauri-Configs schreiben
-            const dummyPubkey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzZFNTM5MDFCNkYwNDYKUldSMVNBNTV1RDR1UGpPWTNtMnpMQmpNQ0dpVnpDU0lhSmsyTHBEWVNZUmdwTWRMcm16aUdCblAK";
+            const dummyPubkey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzZFNTM5MDFCNkYwNDYKUldSMVNBNTV1RDR1UGpOWTNtMnpMQmpNQ0dpVnpDU0lhSmsyTHBEWVNZUmdwTWRMcm16aUdCblAK";
             
             const confFiles = [
               "apps/desktop/src-tauri/tauri.prod.conf.json",
@@ -172,7 +176,7 @@ jobs:
               }
             });
 
-            // 3. Entferne den Zwang für TAURI_SIGNING_PRIVATE_KEY im Linux Skript
+            // 3. Linux-Signierprüfung anpassen
             const scriptFile = "scripts/build-linux-packages.mjs";
             if (fs.existsSync(scriptFile)) {
               let script = fs.readFileSync(scriptFile, "utf8");
@@ -191,6 +195,8 @@ jobs:
           CI: false
           LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && format('{0}/target/{1}/release:{0}/target/native-deps/lib', github.workspace, matrix.settings.target) || '' }}
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.workspace }}/apps/desktop/src-tauri/minisign.key
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
       # --- 6. ARTIFACT UPLOAD ---
       - name: Upload Build Artifacts
@@ -204,4 +210,3 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/rpm/*.rpm
           retention-days: 7
-          
