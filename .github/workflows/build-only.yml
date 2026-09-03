@@ -122,22 +122,28 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. DUMMY TAURI SIGNING KEYS INJIZIEREN ---
+      # --- 4. DUMMY TAURI SIGNING KEYS INJIZIEREN (OHNE LEERZEICHEN-FEHLER) ---
       - name: Inject Dummy Tauri Keys and bypass Linux signing check
         shell: bash
         run: |
-          # 1. Privaten Dummy-Schlüssel für Tauri Bundler in GITHUB_ENV setzen
-          cat << 'EOF' >> $GITHUB_ENV
-          TAURI_SIGNING_PRIVATE_KEY<<KEYEOF
-          untrusted comment: secret key logs
-          RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4=
-          KEYEOF
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-          EOF
-
-          # 2. Passenden Dummy-Pubkey in Tauri-Configs schreiben
           node -e '
             const fs = require("fs");
+
+            // 1. Privaten Schlüssel ohne YAML-Leerzeichen sauber in GITHUB_ENV injizieren
+            const privateKey = [
+              "untrusted comment: secret key logs",
+              "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
+            ].join("\n");
+
+            if (process.env.GITHUB_ENV) {
+              fs.appendFileSync(
+                process.env.GITHUB_ENV,
+                `TAURI_SIGNING_PRIVATE_KEY<<KEYEOF\n${privateKey}\nKEYEOF\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=""\n`
+              );
+              console.log("Injected clean TAURI_SIGNING_PRIVATE_KEY into GITHUB_ENV");
+            }
+
+            // 2. Passenden Dummy-Pubkey in Tauri-Configs schreiben
             const dummyPubkey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzZFNTM5MDFCNkYwNDYKUldSMVNBNTV1RDR1UGpPWTNtMnpMQmpNQ0dpVnpDU0lhSmsyTHBEWVNZUmdwTWRMcm16aUdCblAK";
             
             const confFiles = [
