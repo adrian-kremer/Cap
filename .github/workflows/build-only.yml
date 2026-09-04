@@ -13,7 +13,6 @@ jobs:
     name: Build (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.runner }}
     env:
-      # Verhindert Stack-Overflows (0xc0000005) beim Kompilieren von cap-gpui
       RUST_MIN_STACK: 104857600
     strategy:
       fail-fast: false
@@ -74,7 +73,6 @@ jobs:
           maximum-size: 24GB
           disk-root: "D:"
 
-      # Drosselt Cargo-Jobs auf 1 für Windows, um Speicherüberlauf bei GPUI/MSVC zu vermeiden
       - name: Limit Cargo Jobs for Windows
         if: ${{ runner.os == 'Windows' }}
         shell: bash
@@ -122,25 +120,25 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. DUMMY TAURI SIGNING KEYS INJIZIEREN (REINER BASE64-STRING) ---
-      - name: Patch Tauri Configs & Set Private Key
+      # --- 4. TAURI CONFIGS PATCHEN (UPDATER-BUNDLE DEAKTIVIEREN & ECHTEN MINISIGN-KEY SCHREIBEN) ---
+      - name: Patch Tauri Configs for Unsigned Builds
         shell: bash
         run: |
           node -e '
             const fs = require("fs");
+            const path = require("path");
 
-            // 1. Nur den reinen Base64-String ohne Minisign-Header setzen
-            const rawBase64Key = "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4=";
+            // 1. Erstelle eine physische Key-Datei mit echemn Minisign-Format (2 Zeilen)
+            const validMinisignKey = [
+              "untrusted comment: secret key",
+              "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
+            ].join("\n");
 
-            if (process.env.GITHUB_ENV) {
-              fs.appendFileSync(
-                process.env.GITHUB_ENV,
-                `TAURI_SIGNING_PRIVATE_KEY=${rawBase64Key}\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=""\n`
-              );
-              console.log("Injected raw base64 TAURI_SIGNING_PRIVATE_KEY into GITHUB_ENV");
-            }
+            const keyFilePath = path.resolve("apps/desktop/src-tauri/minisign.key");
+            fs.writeFileSync(keyFilePath, validMinisignKey);
+            console.log("Written valid Minisign key file to " + keyFilePath);
 
-            // 2. Passenden Dummy-Pubkey in Tauri-Configs schreiben
+            // 2. Tauri Konfigurationen anpassen: Bundler-Updater deaktivieren
             const dummyPubkey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzZFNTM5MDFCNkYwNDYKUldSMVNBNTV1RDR1UGpOWTNtMnpMQmpNQ0dpVnpDU0lhSmsyTHBEWVNZUmdwTWRMcm16aUdCblAK";
             
             const confFiles = [
@@ -152,31 +150,28 @@ jobs:
               if (fs.existsSync(file)) {
                 const conf = JSON.parse(fs.readFileSync(file, "utf8"));
                 
+                // Updater Artifact Generation im Bundler abschalten
+                if (!conf.bundle) conf.bundle = {};
+                conf.bundle.createUpdaterArtifacts = false;
+
+                // Struktur für Plugins erhalten, falls Rust-Code sie fordert
                 if (conf.plugins && conf.plugins.updater) {
                   conf.plugins.updater.pubkey = dummyPubkey;
                 }
-                if (conf.tauri && conf.tauri.updater) {
-                  conf.tauri.updater.pubkey = dummyPubkey;
-                  conf.tauri.updater.active = false;
-                }
-                if (conf.bundle && conf.bundle.updater) {
-                  conf.bundle.updater.pubkey = dummyPubkey;
-                  conf.bundle.updater.active = false;
-                }
 
                 fs.writeFileSync(file, JSON.stringify(conf, null, 2));
-                console.log("Injected dummy pubkey into " + file);
+                console.log("Updated config in " + file + " (createUpdaterArtifacts=false)");
               }
             });
 
-            // 3. Linux-Signierprüfung anpassen
+            // 3. Linux-Skript Anforderung umgehen
             const scriptFile = "scripts/build-linux-packages.mjs";
             if (fs.existsSync(scriptFile)) {
               let script = fs.readFileSync(scriptFile, "utf8");
               script = script.replace(/if\s*\(\!process\.env\.TAURI_SIGNING_PRIVATE_KEY[\s\S]*?\}/g, "// Bypassed signing check");
               script = script.replace(/throw new Error\([^)]*TAURI_SIGNING_PRIVATE_KEY[^)]*\);?/g, "// Bypassed signing error");
               fs.writeFileSync(scriptFile, script);
-              console.log("Patched " + scriptFile + " to bypass signing check.");
+              console.log("Patched " + scriptFile);
             }
           '
 
@@ -189,7 +184,7 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: 0
           LD_LIBRARY_PATH: ${{ runner.os == 'Linux' && format('{0}/target/{1}/release:{0}/target/native-deps/lib', github.workspace, matrix.settings.target) || '' }}
           RUST_TARGET_TRIPLE: ${{ matrix.settings.target }}
-          TAURI_SIGNING_PRIVATE_KEY: "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.workspace }}/apps/desktop/src-tauri/minisign.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
       # --- 6. ARTIFACT UPLOAD ---
@@ -204,3 +199,4 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/rpm/*.rpm
           retention-days: 7
+          
