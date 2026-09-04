@@ -120,7 +120,7 @@ jobs:
           fi
           ./scripts/build-desktop-binaries.sh ${{ matrix.settings.target }}
 
-      # --- 4. TAURI CONFIGS PATCHEN (UPDATER-BUNDLE DEAKTIVIEREN & ECHTEN MINISIGN-KEY SCHREIBEN) ---
+      # --- 4. TAURI CONFIGS PATCHEN (UPDATER-BUNDLE DEAKTIVIEREN) ---
       - name: Patch Tauri Configs for Unsigned Builds
         shell: bash
         run: |
@@ -128,7 +128,7 @@ jobs:
             const fs = require("fs");
             const path = require("path");
 
-            // 1. Erstelle eine physische Key-Datei mit echemn Minisign-Format (2 Zeilen)
+            // 1. Physische Key-Datei im Minisign-Format (2 Zeilen) bereitstellen
             const validMinisignKey = [
               "untrusted comment: secret key",
               "RWRCR1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG53R1o0OUJuK1hOaEFVMFJnN2g5Tkd3SkpXN2s0TXRhN2MvTGdpT3Eza3R3T3M2K2MvUGpXU3M3eFFra1B1UXNjS1pEUG1MNG5YUG95eURiSnA4WGVldk9XTHd0cEswNEpKaExyOHMxa1RrcG4="
@@ -136,9 +136,8 @@ jobs:
 
             const keyFilePath = path.resolve("apps/desktop/src-tauri/minisign.key");
             fs.writeFileSync(keyFilePath, validMinisignKey);
-            console.log("Written valid Minisign key file to " + keyFilePath);
 
-            // 2. Tauri Konfigurationen anpassen: Bundler-Updater deaktivieren
+            // 2. Tauri Configs: createUpdaterArtifacts auf false setzen
             const dummyPubkey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzZFNTM5MDFCNkYwNDYKUldSMVNBNTV1RDR1UGpOWTNtMnpMQmpNQ0dpVnpDU0lhSmsyTHBEWVNZUmdwTWRMcm16aUdCblAK";
             
             const confFiles = [
@@ -150,17 +149,15 @@ jobs:
               if (fs.existsSync(file)) {
                 const conf = JSON.parse(fs.readFileSync(file, "utf8"));
                 
-                // Updater Artifact Generation im Bundler abschalten
                 if (!conf.bundle) conf.bundle = {};
                 conf.bundle.createUpdaterArtifacts = false;
 
-                // Struktur für Plugins erhalten, falls Rust-Code sie fordert
                 if (conf.plugins && conf.plugins.updater) {
                   conf.plugins.updater.pubkey = dummyPubkey;
                 }
 
                 fs.writeFileSync(file, JSON.stringify(conf, null, 2));
-                console.log("Updated config in " + file + " (createUpdaterArtifacts=false)");
+                console.log("Updated " + file + " (createUpdaterArtifacts=false)");
               }
             });
 
@@ -171,7 +168,6 @@ jobs:
               script = script.replace(/if\s*\(\!process\.env\.TAURI_SIGNING_PRIVATE_KEY[\s\S]*?\}/g, "// Bypassed signing check");
               script = script.replace(/throw new Error\([^)]*TAURI_SIGNING_PRIVATE_KEY[^)]*\);?/g, "// Bypassed signing error");
               fs.writeFileSync(scriptFile, script);
-              console.log("Patched " + scriptFile);
             }
           '
 
@@ -187,16 +183,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ github.workspace }}/apps/desktop/src-tauri/minisign.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
-      # --- 6. ARTIFACT UPLOAD ---
+      # --- 6. ARTIFACT UPLOAD (Pfad korrigiert auf Root target/) ---
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Cap-Release-${{ matrix.settings.target }}
           path: |
-            apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/dmg/*.dmg
-            apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/nsis/*.exe
-            apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/deb/*.deb
-            apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/appimage/*.AppImage
-            apps/desktop/src-tauri/target/${{ matrix.settings.target }}/release/bundle/rpm/*.rpm
+            target/${{ matrix.settings.target }}/release/bundle/dmg/*.dmg
+            target/${{ matrix.settings.target }}/release/bundle/nsis/*.exe
+            target/${{ matrix.settings.target }}/release/bundle/deb/*.deb
+            target/${{ matrix.settings.target }}/release/bundle/appimage/*.AppImage
+            target/${{ matrix.settings.target }}/release/bundle/rpm/*.rpm
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/rpm/*.rpm
           retention-days: 7
-          
